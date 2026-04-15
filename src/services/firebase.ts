@@ -1,7 +1,5 @@
 // ============================================================
-// FIREBASE CONFIGURATION
-// Replace the values below with your actual Firebase project config.
-// Get these from: Firebase Console → Project Settings → Your Apps → Web App
+// FIREBASE CONFIGURATION — reads from .env file
 // ============================================================
 
 import { initializeApp } from 'firebase/app';
@@ -32,18 +30,18 @@ import {
 } from 'firebase/firestore';
 import type { Chat, Message, UserSettings, FileUrls } from '../types';
 
-// ──────────────────────────────────────────────
-// 🔧 REPLACE WITH YOUR FIREBASE CONFIG
-// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// 🔧 Firebase config — values come from your .env file
+// ──────────────────────────────────────────────────────────────
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId:             "YOUR_APP_ID",
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
-// ──────────────────────────────────────────────
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -61,7 +59,6 @@ export const registerWithEmail = async (
 ) => {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   await updateProfile(cred.user, { displayName });
-  // Create default settings doc
   await setDoc(doc(db, 'settings', cred.user.uid), {
     theme: 'dark',
     language: 'en',
