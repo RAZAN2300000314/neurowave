@@ -1,77 +1,162 @@
 import type { AIResponse, FileUrls } from '../types';
 
-// ──────────────────────────────────────────────────────────────
-// API SERVICE
-// Currently uses mock data. Replace BASE_URL with your backend.
-// ──────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+//  NeuroWave — Dual AI Service
+//
+//  • Dosya yüklendiyse  → Kendi EEG modeliniz  (VITE_API_URL)
+//  • Normal sohbetse    → Groq / Llama 3.3 70B (VITE_GROQ_API_KEY)
+//
+//  Groq ücretsiz key: https://console.groq.com
+// ══════════════════════════════════════════════════════════════
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? '';
+const GROQ_API_KEY    = import.meta.env.VITE_GROQ_API_KEY ?? '';
+const EEG_BACKEND_URL = import.meta.env.VITE_API_URL ?? '';
+const GROQ_MODEL      = 'llama-3.3-70b-versatile';
 
-// Mock delay to simulate network
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const SYSTEM_PROMPT = `You are NeuroWave AI, a dual-purpose intelligent assistant.
 
-// ─── MOCK RESPONSE ────────────────────────────
+PRIMARY ROLE — Brain Signal & EEG Analysis:
+- Analyze EEG signals, spectrograms, and neural audio recordings
+- Identify frequency bands: delta (0.5–4 Hz), theta (4–8 Hz), alpha (8–12 Hz), beta (13–30 Hz), gamma (>30 Hz)
+- Detect artifacts, noise, and abnormal patterns
+- Interpret mental states and cognitive load
+- Provide clinical/research observations and actionable recommendations
 
-const MOCK_RESPONSE: AIResponse = {
-  text: "Brain signal analysis complete. The EEG data shows elevated alpha wave activity (8–12 Hz) in the occipital region, suggesting a relaxed but alert mental state. Beta waves (13–30 Hz) are within normal range, indicating no significant stress markers. The uploaded spectrogram reveals clear frequency bands with minimal noise artifacts. No anomalous spike patterns detected.",
-  audioUrl: "https://onedrive.live.com/download?id=MOCK_AUDIO_FILE_ID",
-  spectrogramUrl: "https://onedrive.live.com/download?id=MOCK_SPECTROGRAM_ID",
-};
+SECONDARY ROLE — General Assistant:
+- Answer any question on any topic helpfully and accurately
+- Maintain conversation context across messages
+- Be concise for simple questions, detailed for complex ones
 
-// ─── SEND MESSAGE (text only) ─────────────────
+LANGUAGE RULE: Always reply in the exact language the user wrote in.
+- Kullanıcı Türkçe yazarsa → Türkçe cevap ver
+- If user writes English → reply in English
+- إذا كتب المستخدم بالعربية → رد بالعربية
+
+When analyzing brain signals, structure your response with these sections:
+1. 📊 Signal Overview
+2. 🔬 Frequency Band Analysis
+3. 🧠 Observations
+4. ✅ Recommendations`;
+
+// ══════════════════════════════════════════════════════════════
+//  1. GENEL SOHBET — Groq API (ücretsiz)
+// ══════════════════════════════════════════════════════════════
 
 export const sendMessage = async (
   message: string,
   chatHistory: Array<{ role: string; content: string }>
 ): Promise<AIResponse> => {
-  // Replace with real API call:
-  // const res = await fetch(`${BASE_URL}/api/chat`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ message, history: chatHistory }),
-  // });
-  // return res.json();
 
-  await delay(1200 + Math.random() * 800);
+  if (!GROQ_API_KEY) {
+    throw new Error(
+      'Groq API key eksik!\n' +
+      '.env dosyasına şunu ekleyin: VITE_GROQ_API_KEY=gsk_...\n' +
+      'Ücretsiz key: https://console.groq.com'
+    );
+  }
 
-  // Vary mock responses slightly
-  const responses = [
-    MOCK_RESPONSE,
-    {
-      text: "Signal processing analysis indicates theta wave dominance (4–7 Hz), commonly associated with drowsiness or deep meditation. The power spectral density plot shows a characteristic 1/f noise profile. Recommend increasing sample frequency for more precise delta wave isolation.",
-      audioUrl: "https://onedrive.live.com/download?id=MOCK_AUDIO_FILE_ID_2",
-      spectrogramUrl: "https://onedrive.live.com/download?id=MOCK_SPECTROGRAM_ID_2",
-    },
-    {
-      text: "Artifact detection complete. The uploaded brain signal contains minor muscle (EMG) contamination around the 40–60 Hz range. After applying a notch filter at 50 Hz, the underlying neural patterns are preserved. Gamma oscillations (>30 Hz) suggest high cognitive load during the recording session.",
-      audioUrl: "https://onedrive.live.com/download?id=MOCK_AUDIO_FILE_ID_3",
-      spectrogramUrl: "https://onedrive.live.com/download?id=MOCK_SPECTROGRAM_ID_3",
-    },
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...chatHistory.slice(-20).map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+    { role: 'user', content: message },
   ];
 
-  const _ = chatHistory; // suppress lint warning
-  const _2 = message;
-  void _;
-  void _2;
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages,
+      max_tokens: 1024,
+      temperature: 0.7,
+    }),
+  });
 
-  return responses[Math.floor(Math.random() * responses.length)];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({})) as {
+      error?: { message?: string };
+    };
+    throw new Error(err.error?.message ?? `Groq API hatası: ${response.status}`);
+  }
+
+  const data = await response.json() as {
+    choices: Array<{ message: { content: string } }>;
+  };
+
+  const text = data.choices[0]?.message?.content ?? '';
+
+  return { text, audioUrl: '', spectrogramUrl: '' };
 };
 
-// ─── UPLOAD FILE (returns OneDrive URL) ───────
+// ══════════════════════════════════════════════════════════════
+//  2. EEG/BEYİN SİNYALİ ANALİZİ — Kendi modeliniz
+//     Backend hazır olduğunda VITE_API_URL'yi .env'e ekleyin
+//     Endpoint: POST /api/analyze
+//     Body:     { audioUrl?, spectrogramUrl?, inputUrl?, prompt? }
+//     Response: { text, audioUrl, spectrogramUrl }
+// ══════════════════════════════════════════════════════════════
+
+export const analyzeBrainSignal = async (
+  fileUrls: FileUrls,
+  prompt?: string
+): Promise<AIResponse> => {
+
+  // Kendi backend'iniz hazırsa burası devreye girer
+  if (EEG_BACKEND_URL) {
+    try {
+      const res = await fetch(`${EEG_BACKEND_URL}/api/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...fileUrls, prompt }),
+      });
+      if (!res.ok) throw new Error(`Backend hatası: ${res.status}`);
+      return res.json() as Promise<AIResponse>;
+    } catch (err) {
+      console.warn('EEG backend ulaşılamadı, Groq\'a yönlendiriliyor:', err);
+    }
+  }
+
+  // Backend yoksa Groq ile analiz et
+  const contextMessage = [
+    prompt ?? 'Bu beyin sinyali kaydını detaylı analiz et.',
+    fileUrls.audioUrl       ? `🔊 Ses dosyası URL: ${fileUrls.audioUrl}` : '',
+    fileUrls.spectrogramUrl ? `📊 Spektrogram URL: ${fileUrls.spectrogramUrl}` : '',
+    fileUrls.inputUrl       ? `📁 Kaynak dosya URL: ${fileUrls.inputUrl}` : '',
+  ].filter(Boolean).join('\n');
+
+  return sendMessage(contextMessage, []);
+};
+
+// ══════════════════════════════════════════════════════════════
+//  3. DOSYA YÜKLEME — OneDrive backend
+//     Backend hazır olduğunda otomatik devreye girer
+// ══════════════════════════════════════════════════════════════
 
 export const uploadFile = async (
   file: File,
   type: 'audio' | 'image'
 ): Promise<FileUrls> => {
-  // Replace with actual backend upload endpoint that handles OneDrive:
-  // const formData = new FormData();
-  // formData.append('file', file);
-  // formData.append('type', type);
-  // const res = await fetch(`${BASE_URL}/api/upload`, { method: 'POST', body: formData });
-  // return res.json();
 
-  await delay(1500);
+  if (EEG_BACKEND_URL) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+    const res = await fetch(`${EEG_BACKEND_URL}/api/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) throw new Error('Dosya yükleme başarısız');
+    return res.json() as Promise<FileUrls>;
+  }
 
+  // Mock — backend hazır olunca silinecek
+  await new Promise((r) => setTimeout(r, 600));
   const mockId = Math.random().toString(36).slice(2, 10).toUpperCase();
 
   if (type === 'audio') {
@@ -82,28 +167,6 @@ export const uploadFile = async (
   }
   return {
     spectrogramUrl: `https://onedrive.live.com/download?id=SPEC_${mockId}`,
-    inputUrl: `https://onedrive.live.com/download?id=INPUT_${mockId}`,
+    inputUrl:       `https://onedrive.live.com/download?id=INPUT_${mockId}`,
   };
 };
-
-// ─── ANALYZE BRAIN SIGNAL ─────────────────────
-
-export const analyzeBrainSignal = async (
-  fileUrls: FileUrls,
-  prompt?: string
-): Promise<AIResponse> => {
-  // Replace with real endpoint:
-  // const res = await fetch(`${BASE_URL}/api/analyze`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ ...fileUrls, prompt }),
-  // });
-  // return res.json();
-
-  void fileUrls;
-  void prompt;
-  await delay(2000 + Math.random() * 1000);
-  return MOCK_RESPONSE;
-};
-
-export const _ = BASE_URL; // export to avoid unused warning

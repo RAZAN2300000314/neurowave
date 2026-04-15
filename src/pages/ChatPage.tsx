@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Send, Paperclip, Music, Image as ImageIcon, X, Plus } from 'lucide-react';
+import { Send, Paperclip, Music, Image as ImageIcon, X, Plus, AlertCircle } from 'lucide-react';
 import { nanoid } from '../utils/nanoid';
 import { useAuth } from '../contexts/AuthContext';
 import { sendMessage, analyzeBrainSignal } from '../services/api';
@@ -25,6 +25,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [currentChatId, setCurrentChatId] = useState<string | null>(chatId ?? null);
   const [pendingUrls, setPendingUrls] = useState<FileUrls | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -34,21 +35,18 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load existing chat
   useEffect(() => {
     if (chatId) {
       getChatById(chatId).then((chat) => {
-        if (chat) setMessages(chat.messages);
+        if (chat) setMessages(chat.messages ?? []);
       });
     }
   }, [chatId]);
 
-  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Auto-resize textarea
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -66,17 +64,17 @@ export default function ChatPage() {
     if (!input.trim() && !pendingUrls) return;
     if (!user) return;
 
+    setError('');
+
     const userMessage: Message = {
       id: nanoid(),
       role: 'user',
-      content: input.trim() || (pendingFile ? `Uploaded: ${pendingFile.name}` : 'Analyze this file'),
+      content: input.trim() || (pendingFile ? `Yüklendi: ${pendingFile.name}` : 'Bu dosyayı analiz et'),
       timestamp: Date.now(),
       ...(pendingUrls ?? {}),
       fileName: pendingFile?.name,
       fileType: pendingFile
-        ? pendingFile.type.startsWith('audio')
-          ? 'audio'
-          : 'image'
+        ? pendingFile.type.startsWith('audio') ? 'audio' : 'image'
         : 'none',
     };
 
@@ -89,7 +87,6 @@ export default function ChatPage() {
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     try {
-      // Create chat in Firestore if new
       let cid = currentChatId;
       if (!cid) {
         cid = await createChat(user.uid, userMessage.content);
@@ -97,7 +94,6 @@ export default function ChatPage() {
         navigate(`/chat/${cid}`, { replace: true });
       }
 
-      // Save file URLs to Firestore
       if (userMessage.audioUrl || userMessage.spectrogramUrl) {
         await saveFileUrls(cid, userMessage.id, {
           audioUrl: userMessage.audioUrl,
@@ -106,11 +102,18 @@ export default function ChatPage() {
         });
       }
 
-      // Get AI response
-      const history = newMessages.slice(-10).map((m) => ({ role: m.role, content: m.content }));
+      const history = newMessages.slice(-10).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       const aiResponse = userMessage.inputUrl
         ? await analyzeBrainSignal(
-            { audioUrl: userMessage.audioUrl, spectrogramUrl: userMessage.spectrogramUrl, inputUrl: userMessage.inputUrl },
+            {
+              audioUrl: userMessage.audioUrl,
+              spectrogramUrl: userMessage.spectrogramUrl,
+              inputUrl: userMessage.inputUrl,
+            },
             userMessage.content
           )
         : await sendMessage(userMessage.content, history);
@@ -120,21 +123,25 @@ export default function ChatPage() {
         role: 'assistant',
         content: aiResponse.text,
         timestamp: Date.now(),
-        audioUrl: aiResponse.audioUrl,
-        spectrogramUrl: aiResponse.spectrogramUrl,
+        audioUrl: aiResponse.audioUrl || undefined,
+        spectrogramUrl: aiResponse.spectrogramUrl || undefined,
       };
 
       const finalMessages = [...newMessages, aiMessage];
       setMessages(finalMessages);
 
-      // Save to Firestore
       await addMessageToChat(cid, finalMessages);
-      await saveFileUrls(cid, aiMessage.id, {
-        audioUrl: aiMessage.audioUrl,
-        spectrogramUrl: aiMessage.spectrogramUrl,
-      });
+
+      if (aiMessage.audioUrl || aiMessage.spectrogramUrl) {
+        await saveFileUrls(cid, aiMessage.id, {
+          audioUrl: aiMessage.audioUrl,
+          spectrogramUrl: aiMessage.spectrogramUrl,
+        });
+      }
     } catch (err) {
-      console.error(err);
+      const msg = err instanceof Error ? err.message : 'Bir hata oluştu.';
+      setError(msg);
+      console.error('Chat error:', err);
     } finally {
       setLoading(false);
     }
@@ -153,9 +160,7 @@ export default function ChatPage() {
       <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 dark:border-dark-600 bg-white dark:bg-dark-800 shrink-0">
         <div className="flex-1 min-w-0">
           <h1 className="font-display text-sm font-bold text-gray-900 dark:text-white truncate">
-            {messages.length > 0
-              ? messages[0].content.slice(0, 50)
-              : t('chat')}
+            {messages.length > 0 ? messages[0].content.slice(0, 50) : t('chat')}
           </h1>
           <p className="text-[10px] text-gray-400 font-mono mt-0.5">
             {messages.length} {messages.length === 1 ? 'message' : 'messages'}
@@ -165,6 +170,7 @@ export default function ChatPage() {
           onClick={() => {
             setMessages([]);
             setCurrentChatId(null);
+            setError('');
             navigate('/chat', { replace: true });
           }}
           className="btn-ghost text-xs gap-1.5"
@@ -176,7 +182,7 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
-        {messages.length === 0 && (
+        {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center h-full text-center py-16 space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-neural-400/20 to-pulse-500/20 border border-neural-200 dark:border-neural-800/50 flex items-center justify-center">
               <div className="flex gap-0.5 items-end">
@@ -219,10 +225,23 @@ export default function ChatPage() {
         ))}
 
         {loading && <TypingIndicator />}
+
+        {/* Hata mesajı */}
+        {error && (
+          <div className="flex items-start gap-3 animate-slide-up">
+            <div className="w-7 h-7 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0 mt-1">
+              <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+            </div>
+            <div className="flex-1 px-4 py-3 rounded-2xl rounded-tl-sm bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/50 text-sm text-red-600 dark:text-red-400 font-body whitespace-pre-line">
+              {error}
+            </div>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
 
-      {/* File upload panel */}
+      {/* Dosya yükleme paneli */}
       {showUpload && (
         <div className="px-4 py-3 border-t border-gray-100 dark:border-dark-600 bg-gray-50 dark:bg-dark-800/50">
           <div className="flex items-center gap-2 mb-2">
@@ -259,7 +278,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Pending file indicator */}
+      {/* Bekleyen dosya */}
       {pendingFile && !showUpload && (
         <div className="px-4 py-2 border-t border-gray-100 dark:border-dark-600 bg-neural-50 dark:bg-neural-900/20">
           <div className="flex items-center gap-2 text-xs text-neural-700 dark:text-neural-300">
@@ -280,7 +299,7 @@ export default function ChatPage() {
             className={`p-2.5 rounded-lg border transition-colors shrink-0 mb-0.5 ${
               showUpload
                 ? 'bg-neural-500 border-neural-500 text-white'
-                : 'border-gray-200 dark:border-dark-500 text-gray-400 hover:border-neural-300 hover:text-neural-500 dark:hover:text-neural-400'
+                : 'border-gray-200 dark:border-dark-500 text-gray-400 hover:border-neural-300 hover:text-neural-500'
             }`}
           >
             <Paperclip className="w-4 h-4" />
@@ -295,7 +314,7 @@ export default function ChatPage() {
               placeholder={t('typeMessage')}
               rows={1}
               disabled={loading}
-              className="input-field resize-none py-2.5 pr-12 min-h-[44px] max-h-[140px]"
+              className="input-field resize-none py-2.5 min-h-[44px] max-h-[140px]"
             />
           </div>
 
