@@ -66,17 +66,15 @@ export default function ChatPage() {
 
     setError('');
 
-    const userMessage: Message = {
-      id: nanoid(),
-      role: 'user',
-      content: input.trim() || (pendingFile ? `Yüklendi: ${pendingFile.name}` : 'Bu dosyayı analiz et'),
-      timestamp: Date.now(),
-      ...(pendingUrls ?? {}),
-      fileName: pendingFile?.name,
-      fileType: pendingFile
-        ? pendingFile.type.startsWith('audio') ? 'audio' : 'image'
-        : 'none',
-    };
+  const userMessage: Message = {
+  id: nanoid(),
+  role: 'user',
+  content: input.trim() || (pendingFile ? `Yüklendi: ${pendingFile.name}` : 'Bu dosyayı analiz et'),
+  timestamp: Date.now(),
+  ...(pendingUrls ?? {}),
+  ...(pendingFile && { fileName: pendingFile.name }),
+  fileType: pendingFile ? (pendingFile.type.startsWith('audio') ? 'audio' : 'image') : 'none',
+};
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
@@ -123,9 +121,10 @@ export default function ChatPage() {
         role: 'assistant',
         content: aiResponse.text,
         timestamp: Date.now(),
-        audioUrl: aiResponse.audioUrl || undefined,
-        spectrogramUrl: aiResponse.spectrogramUrl || undefined,
-      };
+         };
+
+         if (aiResponse.audioUrl) aiMessage.audioUrl = aiResponse.audioUrl;
+if (aiResponse.spectrogramUrl) aiMessage.spectrogramUrl = aiResponse.spectrogramUrl;
 
       const finalMessages = [...newMessages, aiMessage];
       setMessages(finalMessages);

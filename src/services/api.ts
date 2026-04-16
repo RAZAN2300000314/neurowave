@@ -96,10 +96,10 @@ export const sendMessage = async (
 
 // ══════════════════════════════════════════════════════════════
 //  2. EEG/BEYİN SİNYALİ ANALİZİ — Kendi modeliniz
-//     Backend hazır olduğunda VITE_API_URL'yi .env'e ekleyin
-//     Endpoint: POST /api/analyze
-//     Body:     { audioUrl?, spectrogramUrl?, inputUrl?, prompt? }
-//     Response: { text, audioUrl, spectrogramUrl }
+//    Backend hazır olduğunda VITE_API_URL'yi .env'e ekleyin
+//    Endpoint: POST /api/analyze
+//    Body:     { audioUrl?, spectrogramUrl?, inputUrl?, prompt? }
+//    Response: { text, audioUrl, spectrogramUrl }
 // ══════════════════════════════════════════════════════════════
 
 export const analyzeBrainSignal = async (
@@ -135,7 +135,7 @@ export const analyzeBrainSignal = async (
 
 // ══════════════════════════════════════════════════════════════
 //  3. DOSYA YÜKLEME — OneDrive backend
-//     Backend hazır olduğunda otomatik devreye girer
+//    Backend hazır olduğunda otomatik devreye girer
 // ══════════════════════════════════════════════════════════════
 
 export const uploadFile = async (
