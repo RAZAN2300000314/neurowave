@@ -24,7 +24,7 @@ const passthroughUrl = (u?: string): string | undefined => u || undefined;
 export const sendMessage = async (
   message: string,
   chatHistory: Array<{ role: string; content: string }>,
-  dataset: 'ieeg' | 'eeg' = 'ieeg'
+  dataset: 'ieeg' | 'eeg' |'general' = 'ieeg'
 ): Promise<AIResponse> => {
 
   const history = chatHistory.slice(-20).map((m) => ({
@@ -78,7 +78,7 @@ export const sendMessage = async (
 export const analyzeBrainSignal = async (
   fileUrls: FileUrls,
   prompt?: string,
-  dataset: 'ieeg' | 'eeg' = 'ieeg'
+  dataset: 'ieeg' | 'eeg' | 'general' = 'ieeg'
 ): Promise<AIResponse> => {
 
   // Pick a file_url + input_type. Prefer audio if both exist.

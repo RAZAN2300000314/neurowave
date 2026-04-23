@@ -31,7 +31,7 @@ export default function ChatPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadType, setUploadType] = useState<'audio' | 'image'>('audio');
-  const [dataset, setDataset] = useState<'ieeg' | 'eeg'>('ieeg');
+  const [dataset, setDataset] = useState<'ieeg' | 'eeg' | 'general'>('ieeg');
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -324,9 +324,21 @@ if (aiMessage.audioUrl || aiMessage.spectrogramUrl || aiMessage.waveformUrl) {
             >
               EEG
             </button>
+
+            <button
+              onClick={() => setDataset('general')}
+              className={`px-3 py-1 rounded-md text-xs font-body font-medium transition-colors ${
+                dataset === 'general'
+                  ? 'bg-neural-500 text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+              title="General chat (no EEG specialization, but visuals still work on request)"
+            >
+              Chat
+            </button>
           </div>
           <span className="text-[10px] text-gray-400 dark:text-gray-500 font-body">
-            {dataset === 'ieeg' ? 'Intracranial signals' : 'Scalp signals'}
+            {dataset === 'ieeg' ? 'Intracranial signals' : dataset === 'eeg' ? 'Scalp signals' : 'General conversation'}
           </span>
         </div>
       </div>
