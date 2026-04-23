@@ -4,16 +4,52 @@ export interface User {
   displayName: string | null;
 }
 
+// ──────────────────────────────────────────────────────────────
+//  EEG Analysis types — attached to assistant messages
+// ──────────────────────────────────────────────────────────────
+
+export interface BandPowers {
+  delta: number;
+  theta: number;
+  alpha: number;
+  beta:  number;
+  gamma: number;
+}
+
+export interface TopKPrediction {
+  label: string;
+  confidence: number;
+}
+
+export interface Classification {
+  mode: 'binary' | 'multiclass';
+  label: string;
+  confidence: number;
+  top_k: TopKPrediction[];
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Message (one chat bubble)
+// ──────────────────────────────────────────────────────────────
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+
+  // File upload info (for user messages)
   audioUrl?: string;
   spectrogramUrl?: string;
   inputUrl?: string;
   fileType?: 'audio' | 'image' | 'none';
   fileName?: string;
+
+  // Analysis visuals (for assistant messages from the backend)
+  waveformUrl?: string;
+  bandPowers?: BandPowers;
+  classification?: Classification;
+  hasVisuals?: boolean;
 }
 
 export interface Chat {
@@ -32,10 +68,18 @@ export interface FileUrls {
   inputUrl?: string;
 }
 
+// ──────────────────────────────────────────────────────────────
+//  AI Response — what api.ts returns
+// ──────────────────────────────────────────────────────────────
+
 export interface AIResponse {
   text: string;
-  audioUrl: string;
-  spectrogramUrl: string;
+  audioUrl?: string;
+  spectrogramUrl?: string;
+  waveformUrl?: string;
+  bandPowers?: BandPowers;
+  classification?: Classification;
+  hasVisuals?: boolean;
 }
 
 export interface UserSettings {
