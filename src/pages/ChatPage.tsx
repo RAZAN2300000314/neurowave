@@ -31,6 +31,7 @@ export default function ChatPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadType, setUploadType] = useState<'audio' | 'image'>('audio');
+  const [dataset, setDataset] = useState<'ieeg' | 'eeg'>('ieeg');
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -92,12 +93,12 @@ export default function ChatPage() {
         navigate(`/chat/${cid}`, { replace: true });
       }
 
-      if (userMessage.audioUrl || userMessage.spectrogramUrl) {
-        await saveFileUrls(cid, userMessage.id, {
-          audioUrl: userMessage.audioUrl,
-          spectrogramUrl: userMessage.spectrogramUrl,
-          inputUrl: userMessage.inputUrl,
-        });
+if (userMessage.audioUrl || userMessage.spectrogramUrl || userMessage.inputUrl) {
+        const fileUrls: Record<string, string> = {};
+        if (userMessage.audioUrl)       fileUrls.audioUrl       = userMessage.audioUrl;
+        if (userMessage.spectrogramUrl) fileUrls.spectrogramUrl = userMessage.spectrogramUrl;
+        if (userMessage.inputUrl)       fileUrls.inputUrl       = userMessage.inputUrl;
+        await saveFileUrls(cid, userMessage.id, fileUrls);
       }
 
       const history = newMessages.slice(-10).map((m) => ({
@@ -112,30 +113,34 @@ export default function ChatPage() {
               spectrogramUrl: userMessage.spectrogramUrl,
               inputUrl: userMessage.inputUrl,
             },
-            userMessage.content
+            userMessage.content,
+            dataset
           )
-        : await sendMessage(userMessage.content, history);
+        : await sendMessage(userMessage.content, history, dataset);
 
-      const aiMessage: Message = {
+     const aiMessage: Message = {
         id: nanoid(),
         role: 'assistant',
         content: aiResponse.text,
         timestamp: Date.now(),
-         };
+      };
 
-         if (aiResponse.audioUrl) aiMessage.audioUrl = aiResponse.audioUrl;
-if (aiResponse.spectrogramUrl) aiMessage.spectrogramUrl = aiResponse.spectrogramUrl;
-
+      if (aiResponse.audioUrl)       aiMessage.audioUrl       = aiResponse.audioUrl;
+      if (aiResponse.spectrogramUrl) aiMessage.spectrogramUrl = aiResponse.spectrogramUrl;
+      if (aiResponse.waveformUrl)    aiMessage.waveformUrl    = aiResponse.waveformUrl;
+      if (aiResponse.bandPowers)     aiMessage.bandPowers     = aiResponse.bandPowers;
+      if (aiResponse.classification) aiMessage.classification = aiResponse.classification;
+      if (aiResponse.hasVisuals)     aiMessage.hasVisuals     = aiResponse.hasVisuals;
       const finalMessages = [...newMessages, aiMessage];
       setMessages(finalMessages);
 
       await addMessageToChat(cid, finalMessages);
-
-      if (aiMessage.audioUrl || aiMessage.spectrogramUrl) {
-        await saveFileUrls(cid, aiMessage.id, {
-          audioUrl: aiMessage.audioUrl,
-          spectrogramUrl: aiMessage.spectrogramUrl,
-        });
+if (aiMessage.audioUrl || aiMessage.spectrogramUrl || aiMessage.waveformUrl) {
+        const fileUrls: Record<string, string> = {};
+        if (aiMessage.audioUrl)       fileUrls.audioUrl       = aiMessage.audioUrl;
+        if (aiMessage.spectrogramUrl) fileUrls.spectrogramUrl = aiMessage.spectrogramUrl;
+        if (aiMessage.waveformUrl)    fileUrls.waveformUrl    = aiMessage.waveformUrl;
+        await saveFileUrls(cid, aiMessage.id, fileUrls);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Bir hata oluştu.';
@@ -290,6 +295,42 @@ if (aiResponse.spectrogramUrl) aiMessage.spectrogramUrl = aiResponse.spectrogram
         </div>
       )}
 
+      {/* Dataset toggle */}
+      <div className="px-4 pt-3 bg-white dark:bg-dark-800 shrink-0">
+        <div className="max-w-3xl mx-auto flex items-center gap-2">
+          <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+            Dataset:
+          </span>
+          <div className="inline-flex rounded-lg border border-gray-200 dark:border-dark-500 p-0.5 bg-gray-50 dark:bg-dark-700">
+            <button
+              onClick={() => setDataset('ieeg')}
+              className={`px-3 py-1 rounded-md text-xs font-body font-medium transition-colors ${
+                dataset === 'ieeg'
+                  ? 'bg-neural-500 text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+              title="Intracranial EEG (electrodes on the brain surface)"
+            >
+              iEEG
+            </button>
+            <button
+              onClick={() => setDataset('eeg')}
+              className={`px-3 py-1 rounded-md text-xs font-body font-medium transition-colors ${
+                dataset === 'eeg'
+                  ? 'bg-neural-500 text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+              title="Scalp EEG (electrodes on the scalp)"
+            >
+              EEG
+            </button>
+          </div>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 font-body">
+            {dataset === 'ieeg' ? 'Intracranial signals' : 'Scalp signals'}
+          </span>
+        </div>
+      </div>
+      
       {/* Input */}
       <div className="px-4 py-4 border-t border-gray-100 dark:border-dark-600 bg-white dark:bg-dark-800 shrink-0">
         <div className="flex items-end gap-3 max-w-3xl mx-auto">
