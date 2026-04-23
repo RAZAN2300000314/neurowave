@@ -1,141 +1,138 @@
 import type { AIResponse, FileUrls } from '../types';
 
 // ══════════════════════════════════════════════════════════════
-//  NeuroWave — Dual AI Service
+//  NeuroWave API Client
 //
-//  • Dosya yüklendiyse  → Kendi EEG modeliniz  (VITE_API_URL)
-//  • Normal sohbetse    → Groq / Llama 3.3 70B (VITE_GROQ_API_KEY)
+//  All chat traffic goes through our FastAPI backend (VITE_API_URL).
+//  The backend talks to Groq and generates demo EEG visuals.
 //
-//  Groq ücretsiz key: https://console.groq.com
+//  Old direct-to-Groq path is commented out below for reference.
 // ══════════════════════════════════════════════════════════════
 
-const GROQ_API_KEY    = import.meta.env.VITE_GROQ_API_KEY ?? '';
-const EEG_BACKEND_URL = import.meta.env.VITE_API_URL ?? '';
-const GROQ_MODEL      = 'llama-3.3-70b-versatile';
+const EEG_BACKEND_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
-const SYSTEM_PROMPT = `You are NeuroWave AI, a dual-purpose intelligent assistant.
-
-PRIMARY ROLE — Brain Signal & EEG Analysis:
-- Analyze EEG signals, spectrograms, and neural audio recordings
-- Identify frequency bands: delta (0.5–4 Hz), theta (4–8 Hz), alpha (8–12 Hz), beta (13–30 Hz), gamma (>30 Hz)
-- Detect artifacts, noise, and abnormal patterns
-- Interpret mental states and cognitive load
-- Provide clinical/research observations and actionable recommendations
-
-SECONDARY ROLE — General Assistant:
-- Answer any question on any topic helpfully and accurately
-- Maintain conversation context across messages
-- Be concise for simple questions, detailed for complex ones
-
-LANGUAGE RULE: Always reply in the exact language the user wrote in.
-- Kullanıcı Türkçe yazarsa → Türkçe cevap ver
-- If user writes English → reply in English
-- إذا كتب المستخدم بالعربية → رد بالعربية
-
-When analyzing brain signals, structure your response with these sections:
-1. 📊 Signal Overview
-2. 🔬 Frequency Band Analysis
-3. 🧠 Observations
-4. ✅ Recommendations`;
+// Small helper: convert absolute /static/... URLs from the backend into
+// whatever the frontend will actually request. Since the backend already
+// returns absolute URLs (http://localhost:8000/static/...), we pass them
+// through untouched.
+const passthroughUrl = (u?: string): string | undefined => u || undefined;
 
 // ══════════════════════════════════════════════════════════════
-//  1. GENEL SOHBET — Groq API (ücretsiz)
+//  1. TEXT CHAT — goes to FastAPI backend
 // ══════════════════════════════════════════════════════════════
 
 export const sendMessage = async (
   message: string,
-  chatHistory: Array<{ role: string; content: string }>
+  chatHistory: Array<{ role: string; content: string }>,
+  dataset: 'ieeg' | 'eeg' = 'ieeg'
 ): Promise<AIResponse> => {
 
-  if (!GROQ_API_KEY) {
-    throw new Error(
-      'Groq API key eksik!\n' +
-      '.env dosyasına şunu ekleyin: VITE_GROQ_API_KEY=gsk_...\n' +
-      'Ücretsiz key: https://console.groq.com'
-    );
-  }
+  const history = chatHistory.slice(-20).map((m) => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: m.content,
+  }));
 
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...chatHistory.slice(-20).map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
-    { role: 'user', content: message },
-  ];
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const res = await fetch(`${EEG_BACKEND_URL}/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GROQ_API_KEY}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages,
-      max_tokens: 1024,
-      temperature: 0.7,
+      input_type: 'text',
+      text: message,
+      history,
+      mode: 'binary',
+      dataset,
     }),
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({})) as {
-      error?: { message?: string };
-    };
-    throw new Error(err.error?.message ?? `Groq API hatası: ${response.status}`);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`Backend error ${res.status}: ${errBody || res.statusText}`);
   }
 
-  const data = await response.json() as {
-    choices: Array<{ message: { content: string } }>;
+  const data = await res.json() as {
+    aiText: string;
+    audioUrl?: string;
+    spectrogramUrl?: string;
+    waveformUrl?: string;
+    bandPowers?: AIResponse['bandPowers'];
+    classification?: AIResponse['classification'];
+    hasVisuals?: boolean;
   };
 
-  const text = data.choices[0]?.message?.content ?? '';
-
-  return { text, audioUrl: '', spectrogramUrl: '' };
+  return {
+    text: data.aiText,
+    audioUrl: passthroughUrl(data.audioUrl),
+    spectrogramUrl: passthroughUrl(data.spectrogramUrl),
+    waveformUrl: passthroughUrl(data.waveformUrl),
+    bandPowers: data.bandPowers,
+    classification: data.classification,
+    hasVisuals: data.hasVisuals,
+  };
 };
 
 // ══════════════════════════════════════════════════════════════
-//  2. EEG/BEYİN SİNYALİ ANALİZİ — Kendi modeliniz
-//    Backend hazır olduğunda VITE_API_URL'yi .env'e ekleyin
-//    Endpoint: POST /api/analyze
-//    Body:     { audioUrl?, spectrogramUrl?, inputUrl?, prompt? }
-//    Response: { text, audioUrl, spectrogramUrl }
+//  2. EEG FILE ANALYSIS — also goes to FastAPI /chat
+//     (backend decides input_type based on what we send)
 // ══════════════════════════════════════════════════════════════
 
 export const analyzeBrainSignal = async (
   fileUrls: FileUrls,
-  prompt?: string
+  prompt?: string,
+  dataset: 'ieeg' | 'eeg' = 'ieeg'
 ): Promise<AIResponse> => {
 
-  // Kendi backend'iniz hazırsa burası devreye girer
-  if (EEG_BACKEND_URL) {
-    try {
-      const res = await fetch(`${EEG_BACKEND_URL}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...fileUrls, prompt }),
-      });
-      if (!res.ok) throw new Error(`Backend hatası: ${res.status}`);
-      return res.json() as Promise<AIResponse>;
-    } catch (err) {
-      console.warn('EEG backend ulaşılamadı, Groq\'a yönlendiriliyor:', err);
-    }
+  // Pick a file_url + input_type. Prefer audio if both exist.
+  const fileUrl =
+    fileUrls.audioUrl ||
+    fileUrls.spectrogramUrl ||
+    fileUrls.inputUrl ||
+    '';
+
+  const inputType: 'audio' | 'image' =
+    fileUrls.audioUrl ? 'audio' : 'image';
+
+  const res = await fetch(`${EEG_BACKEND_URL}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input_type: inputType,
+      text: prompt ?? 'Please analyze this brain signal recording in detail.',
+      file_url: fileUrl,
+      history: [],
+      mode: 'binary',
+      dataset,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`Backend error ${res.status}: ${errBody || res.statusText}`);
   }
 
-  // Backend yoksa Groq ile analiz et
-  const contextMessage = [
-    prompt ?? 'Bu beyin sinyali kaydını detaylı analiz et.',
-    fileUrls.audioUrl       ? `🔊 Ses dosyası URL: ${fileUrls.audioUrl}` : '',
-    fileUrls.spectrogramUrl ? `📊 Spektrogram URL: ${fileUrls.spectrogramUrl}` : '',
-    fileUrls.inputUrl       ? `📁 Kaynak dosya URL: ${fileUrls.inputUrl}` : '',
-  ].filter(Boolean).join('\n');
+  const data = await res.json() as {
+    aiText: string;
+    audioUrl?: string;
+    spectrogramUrl?: string;
+    waveformUrl?: string;
+    bandPowers?: AIResponse['bandPowers'];
+    classification?: AIResponse['classification'];
+    hasVisuals?: boolean;
+  };
 
-  return sendMessage(contextMessage, []);
+  return {
+    text: data.aiText,
+    audioUrl: passthroughUrl(data.audioUrl),
+    spectrogramUrl: passthroughUrl(data.spectrogramUrl),
+    waveformUrl: passthroughUrl(data.waveformUrl),
+    bandPowers: data.bandPowers,
+    classification: data.classification,
+    hasVisuals: data.hasVisuals,
+  };
 };
 
 // ══════════════════════════════════════════════════════════════
-//  3. DOSYA YÜKLEME — OneDrive backend
-//    Backend hazır olduğunda otomatik devreye girer
+//  3. FILE UPLOAD — mock for demo (backend /upload exists but
+//     we don't have real OneDrive yet). Left as-is.
 // ══════════════════════════════════════════════════════════════
 
 export const uploadFile = async (
@@ -143,19 +140,23 @@ export const uploadFile = async (
   type: 'audio' | 'image'
 ): Promise<FileUrls> => {
 
-  if (EEG_BACKEND_URL) {
+  // Try real backend upload first
+  try {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('type', type);
-    const res = await fetch(`${EEG_BACKEND_URL}/api/upload`, {
+    const res = await fetch(`${EEG_BACKEND_URL}/upload`, {
       method: 'POST',
       body: formData,
     });
-    if (!res.ok) throw new Error('Dosya yükleme başarısız');
-    return res.json() as Promise<FileUrls>;
+    if (res.ok) {
+      return await res.json() as FileUrls;
+    }
+  } catch {
+    // fall through to mock
   }
 
-  // Mock — backend hazır olunca silinecek
+  // Mock fallback
   await new Promise((r) => setTimeout(r, 600));
   const mockId = Math.random().toString(36).slice(2, 10).toUpperCase();
 
