@@ -163,3 +163,4 @@ export const getFileUrls = async (
   const snap = await getDoc(doc(db, 'fileUrls', `${chatId}_${messageId}`));
   return snap.exists() ? (snap.data() as FileUrls) : null;
 };
+
